@@ -1,0 +1,136 @@
+import streamlit as st
+import pandas as pd
+from backend import (
+    add_user, get_user_profile, add_friend, get_friends, get_user_workouts,
+    add_workout, get_leaderboard, get_goals, add_goal, get_all_users
+)
+
+# --- User Authentication (Simplified) ---
+# In a real app, this would be a login system. For this example, we use a selectbox.
+st.sidebar.header("User Selection")
+users_df = get_all_users()
+user_options = {row['name']: row['user_id'] for index, row in users_df.iterrows()}
+selected_user_name = st.sidebar.selectbox("Select a User", list(user_options.keys()))
+user_id = user_options.get(selected_user_name)
+
+st.title("💪 Personal Fitness Tracker")
+st.markdown("Track your workouts, set goals, and connect with friends.")
+
+# --- CRUD: CREATE (New User) ---
+with st.expander("➕ Add New User"):
+    with st.form("new_user_form"):
+        name = st.text_input("Name")
+        email = st.text_input("Email")
+        weight = st.number_input("Weight (kg)", min_value=1.0, format="%.2f")
+        if st.form_submit_button("Create User"):
+            if add_user(name, email, weight):
+                st.success(f"User '{name}' created successfully!")
+            else:
+                st.error("Failed to create user. Email may already exist.")
+
+# --- CRUD: READ (User Profile) ---
+if user_id:
+    user_profile = get_user_profile(user_id)
+    if user_profile:
+        st.header(f"Welcome, {user_profile['name']}!")
+        st.write(f"Email: {user_profile['email']} | Weight: {user_profile['weight']} kg")
+    else:
+        st.error("User profile not found.")
+    
+    st.markdown("---")
+    
+    # --- CRUD: CREATE (Add Workout) ---
+    st.header("🏋️‍♂️ Log a New Workout")
+    with st.form("new_workout_form"):
+        workout_date = st.date_input("Date")
+        duration = st.number_input("Duration (minutes)", min_value=1)
+        st.subheader("Exercises")
+        num_exercises = st.number_input("How many exercises?", min_value=1, value=1)
+        exercises_list = []
+        for i in range(num_exercises):
+            st.markdown(f"**Exercise {i+1}**")
+            exercise_name = st.text_input("Exercise Name", key=f"ex_name_{i}")
+            reps = st.number_input("Reps", min_value=1, key=f"reps_{i}")
+            sets = st.number_input("Sets", min_value=1, key=f"sets_{i}")
+            weight = st.number_input("Weight (kg)", min_value=0.0, format="%.2f", key=f"weight_{i}")
+            exercises_list.append({
+                'name': exercise_name, 'reps': reps, 'sets': sets, 'weight': weight
+            })
+        
+        if st.form_submit_button("Log Workout"):
+            if add_workout(user_id, workout_date, duration, exercises_list):
+                st.success("Workout logged successfully!")
+            else:
+                st.error("Failed to log workout.")
+    
+    st.markdown("---")
+    
+    # --- CRUD: READ (Workout History) ---
+    st.header("📈 My Workout History")
+    workouts_df = get_user_workouts(user_id)
+    if not workouts_df.empty:
+        st.dataframe(workouts_df, use_container_width=True)
+    else:
+        st.info("No workouts logged yet.")
+    
+    st.markdown("---")
+    
+    # --- CRUD: READ (Leaderboard) ---
+    st.header("🏆 Leaderboard")
+    leaderboard_metric = st.selectbox("Rank by:", ("Total Duration (minutes)",))
+    leaderboard_df = get_leaderboard(user_id, leaderboard_metric)
+    
+    if not leaderboard_df.empty:
+        st.dataframe(leaderboard_df.set_index('rank'), use_container_width=True)
+    else:
+        st.info("No friends or workout data available for leaderboard.")
+
+    st.markdown("---")
+
+    # --- CRUD: READ (Goals) ---
+    st.header("🎯 My Goals")
+    goals_df = get_goals(user_id)
+    if not goals_df.empty:
+        st.dataframe(goals_df, use_container_width=True)
+    else:
+        st.info("No goals set yet.")
+    
+    with st.expander("Add New Goal"):
+        with st.form("new_goal_form"):
+            goal_desc = st.text_area("Goal Description")
+            target_val = st.number_input("Target Value (e.g., 5 for 5 workouts/week)", min_value=1)
+            if st.form_submit_button("Set Goal"):
+                if add_goal(user_id, goal_desc, target_val):
+                    st.success("Goal set successfully!")
+                else:
+                    st.error("Failed to set goal.")
+
+    st.markdown("---")
+    
+    # --- CRUD: READ & CREATE/DELETE (Friends) ---
+    st.header("👥 Friends List")
+    friends_df = get_friends(user_id)
+    if not friends_df.empty:
+        st.write("Your friends:")
+        st.dataframe(friends_df, use_container_width=True)
+    else:
+        st.info("You haven't added any friends yet.")
+    
+    with st.expander("Add or Remove Friends"):
+        all_other_users = get_all_users()
+        all_other_users = all_other_users[all_other_users['user_id'] != user_id]
+        
+        # Add Friend
+        add_friend_id = st.selectbox("Select a friend to add", all_other_users['user_id'].tolist(), format_func=lambda x: all_other_users[all_other_users['user_id']==x]['name'].iloc[0])
+        if st.button("Add Friend"):
+            if add_friend(user_id, add_friend_id):
+                st.success("Friend added!")
+            else:
+                st.error("Failed to add friend or already friends.")
+            
+        # Remove Friend
+        if not friends_df.empty:
+            remove_friend_id = st.selectbox("Select a friend to remove", friends_df['friend_id'].tolist(), format_func=lambda x: friends_df[friends_df['friend_id']==x]['friend_name'].iloc[0])
+            if st.button("Remove Friend"):
+                # Backend_Tracker.py would need a remove_friend function
+                pass # This is a placeholder for the delete functionality
